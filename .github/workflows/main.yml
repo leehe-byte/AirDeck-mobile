@@ -41,8 +41,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      # 先打印环境信息：失败时这段能区分「Gradle 没下来 / JDK 不对 / SDK 找不到」
+      - name: Build environment info
+        run: |
+          echo "=== java ==="; java -version 2>&1 | head -3
+          echo "=== gradle wrapper ==="; ./gradlew --version 2>&1 | head -12
+          echo "=== secrets 是否存在（只看长度，不打印内容） ==="
+          for k in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            v="${!k}"
+            echo "  $k: ${#v} 字符"
+          done
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --stacktrace
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

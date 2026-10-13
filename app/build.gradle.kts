@@ -29,15 +29,35 @@ android {
     }
 
     // release 签名：keystore 由环境变量提供（和主仓库 AirDeck 用同一套密钥），
-    // 本地没有 env 时不签名，行为与之前一致。
-    // 之前这里完全没有签名配置，assembleRelease 产出的是 *-unsigned.apk，装不上。
+    // 本地没有 env 时不签名。
+    //
+    // 这里刻意做成「坏 secret 不会让构建崩」：
+    // Base64.getDecoder().decode() 抛异常发生在配置阶段，会让整个构建直接失败，
+    // 而且报错信息和 secret 本身没关系，很难定位。
+    // 现在改成解码失败就退回不签名 + 打一条醒目的警告，
+    // 构建照常完成（产物会带 -unsigned 后缀，一眼能看出来）。
+    val keystoreBytes: ByteArray? = System.getenv("KEYSTORE_BASE64")
+        ?.filterNot { it.isWhitespace() }
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { raw ->
+            try {
+                Base64.getDecoder().decode(raw)
+            } catch (e: IllegalArgumentException) {
+                logger.warn(
+                    "⚠️  KEYSTORE_BASE64 不是合法的 base64（长度 ${raw.length}，" +
+                        "开头是 \"${raw.take(12)}…\"）。本次构建不会签名，" +
+                        "产物是 *-unsigned.apk。请检查 Repository secret " +
+                        "KEYSTORE_FILE 是否是 `base64 -w0 keystore.jks` 的结果。"
+                )
+                null
+            }
+        }
+
     signingConfigs {
         create("release") {
-            val b64 = System.getenv("KEYSTORE_BASE64")
-            if (!b64.isNullOrBlank()) {
+            if (keystoreBytes != null) {
                 val keystoreFile = File.createTempFile("airdeck_release", ".jks")
-                // secrets 里的 base64 可能含换行/空白，先剔除再解码
-                keystoreFile.writeBytes(Base64.getDecoder().decode(b64.filterNot { it.isWhitespace() }))
+                keystoreFile.writeBytes(keystoreBytes)
                 storeFile = keystoreFile
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias = System.getenv("KEY_ALIAS") ?: ""
@@ -47,7 +67,7 @@ android {
     }
 
     buildTypes {
-        val hasReleaseKey = !System.getenv("KEYSTORE_BASE64").isNullOrBlank()
+        val hasReleaseKey = keystoreBytes != null
         release {
             isMinifyEnabled = true
             isShrinkResources = true
