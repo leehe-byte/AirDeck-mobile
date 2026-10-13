@@ -52,7 +52,7 @@ jobs:
             echo "  $k: ${#v} 字符"
           done
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE || secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -60,7 +60,7 @@ jobs:
       - name: Build Release APK
         run: ./gradlew assembleRelease --stacktrace
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE || secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -89,7 +89,7 @@ jobs:
           echo "FINAL_FILENAME=${OUTPUT_NAME}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE || secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -98,16 +98,27 @@ jobs:
       # 这样不用登录就能从 GitHub API 读到，便于排查「secret 没生效」。
       - name: Collect signing diagnostics
         run: |
+          # 写成文件当资产上传 —— Release body 对已存在的 Release 不会更新，
+          # 只有资产是每次构建都覆盖的，所以诊断信息走这里。
+          mkdir -p final_artifacts
           {
-            echo "DIAG_SIGNED=${SIGNED}"
-            echo "DIAG_KEYSTORE_LEN=${#KEYSTORE_BASE64}"
-            echo "DIAG_PWD_LEN=${#KEYSTORE_PASSWORD}"
-            echo "DIAG_ALIAS=${KEY_ALIAS:-(空)}"
-            echo "DIAG_ALIAS_LEN=${#KEY_ALIAS}"
-            echo "DIAG_KEYPWD_LEN=${#KEY_PASSWORD}"
-          } >> $GITHUB_ENV
+            echo "构建时间: $(date -u +%FT%TZ)"
+            echo "commit:   $(git rev-parse HEAD)"
+            echo
+            echo "APK 是否已签名: ${SIGNED}"
+            echo
+            echo "接收到的 secret 长度（只打长度，不打内容）:"
+            echo "  KEYSTORE_BASE64   (来自 KEYSTORE_FILE): ${#KEYSTORE_BASE64}"
+            echo "  KEYSTORE_PASSWORD: ${#KEYSTORE_PASSWORD}"
+            echo "  KEY_ALIAS        : ${#KEY_ALIAS}   值=${KEY_ALIAS:-(空)}"
+            echo "  KEY_PASSWORD     : ${#KEY_PASSWORD}"
+            echo
+            echo "构建产物:"
+            ls -l app/build/outputs/apk/release/ 2>/dev/null || echo "  (目录不存在)"
+          } > final_artifacts/signing-diagnostics.txt
+          cat final_artifacts/signing-diagnostics.txt
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE || secrets.KEYSTORE_BASE64 || secrets.KEYSTORE || secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -159,7 +170,7 @@ jobs:
 
             自动编译结果包含：
             - `${{ env.FINAL_FILENAME }}`
-          files: final_artifacts/*.apk
+          files: final_artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
