@@ -1,0 +1,112 @@
+name: Android CI
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*' # 推送 v 开头的 tag 时自动构建并发布 Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 获取完整历史以读取 tag
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # 不使用 android-actions/setup-android：它会去安装已被下架的 'tools' 包，
+      # 在 ubuntu-latest 上直接失败（主仓库踩过这个坑）。
+      # ubuntu-latest 镜像本身自带 Android SDK，且 license 已接受。
+      - name: Locate Android SDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then SDK=/usr/local/lib/android/sdk; fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "SDK = $SDK"
+          echo "--- platforms ---"; ls "$SDK/platforms" 2>/dev/null || true
+          echo "--- build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || true
+          echo "--- licenses ---"; ls "$SDK/licenses" 2>/dev/null || true
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Prepare Artifacts
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            VERSION="nightly-$(git rev-parse --short HEAD)"
+          fi
+
+          OUTPUT_NAME="AirDeck-Mobile-${VERSION}-release.apk"
+
+          mkdir -p final_artifacts
+          cp app/build/outputs/apk/release/*.apk "final_artifacts/${OUTPUT_NAME}"
+
+          echo "FINAL_FILENAME=${OUTPUT_NAME}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AirDeck Mobile ${{ env.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## 🚀 AirDeck Mobile ${{ env.VERSION }}
+
+            随身 WiFi / 定制网关的 Android 管理客户端。配合 [AirDeck](https://github.com/leehe-byte/AirDeck)
+            服务端使用，也可以单独连原厂管理页。
+
+            **这一版是什么**
+
+            - 内置本地安全隧道：把远程网关服务映射到手机本机 `127.0.0.1`，
+              WebView 因此被认定为「安全来源」，自动解锁 **WebCodecs / Scrcpy 投屏**
+              （否则在非安全 HTTP 环境下会黑屏、无法调用硬件解码）
+            - 启动后自动与网关握手，登录凭证同步注入所有隧道端口，不用反复输密码
+            - 支持在 **AirDeck 定制界面** 与 **官方管理界面** 之间切换，隧道自动跟随端口
+            - 可改网关 IP、自定义端口映射、管理密码；支持双击返回与一键退出
+            - 电源监控通知：定时检测设备电量，低电量与满电提醒
+
+            **⚠️ 从 2.3 及更早版本升级**
+
+            这一版换了 `applicationId`（原来的 `com.opengw.manager` 和服务端撞了，
+            两个 App 装在同一台设备上会互相顶掉）。
+            所以**无法覆盖安装**，需要先卸载旧版再装这个。
+            本 App 是无状态客户端，重装不影响网关上的任何配置。
+
+            ---
+
+            自动编译结果包含：
+            - `${{ env.FINAL_FILENAME }}`
+
+            > 当前是独立签名的 APK，安装前请确认与已装版本来源一致。
+          files: final_artifacts/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact (For non-tag builds)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FINAL_FILENAME }}
+          path: final_artifacts/*.apk
+          retention-days: 7

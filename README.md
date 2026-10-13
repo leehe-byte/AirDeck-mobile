@@ -19,7 +19,13 @@ AirDeck Mobile 是一款专为随身 WiFi 和定制网关设计的 Android 高�
 
 - **内核**：WebView (Chrome 内核)
 - **隧道**：Kotlin Coroutines + ServerSocket (支持 SO_REUSEADDR)
-- **版本**：v1.4 (Build 5 - Connectivity Fix)
+- **构建**：Gradle 8.13 + AGP 8.13.0（与主仓库 AirDeck 同一套版本组合）
+- 版本号见 `app/build.gradle.kts` 的 `versionName`，不再写在这里（写死了会过期）
+
+> **关于 applicationId**：从 2.4 起是 `com.opengw.manager.mobile`。
+> 2.3 及更早用的是 `com.opengw.manager`，和服务端 AirDeck 撞了 ——
+> 两者签名密钥相同，装在同一台设备上会互相顶掉。
+> 所以 2.3 → 2.4 无法覆盖安装，需要先卸载旧版。
 
 ## 📄 许可证
 

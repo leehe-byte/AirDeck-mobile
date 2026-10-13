@@ -6,15 +6,25 @@ plugins {
 }
 
 android {
+    // namespace 保持和主仓库一致：它决定 R 类 / BuildConfig 的包名，
+    // 而源码里是直接用 R.layout.xxx（没有 import），
+    // 所以 namespace 一动就得改所有 Kotlin 文件。applicationId 才是安装标识，
+    // 两者本来就可以不同。
     namespace = "com.opengw.manager"
     compileSdk = 33
 
     defaultConfig {
-        applicationId = "com.opengw.manager"
+        // 和主仓库 AirDeck 区分开。两边原来都是 com.opengw.manager，
+        // 加上用的是同一把签名密钥，在装主 App 的设备上安装移动版会直接把它顶掉
+        // （主 App 是设备上的服务端，被顶掉服务就停了）。
+        // 分开之后两个 App 可以共存，误装也不会互相影响。
+        // 代价：手机上已有的移动版无法覆盖升级，需要卸载重装一次
+        //（这个 App 是无状态客户端，重装基本无损失）。
+        applicationId = "com.opengw.manager.mobile"
         minSdk = 24
         targetSdk = 33
-        versionCode = 10
-        versionName = "2.3"
+        versionCode = 11
+        versionName = "2.4"
         setProperty("archivesBaseName", "${rootProject.name}-${versionName}")
     }
 
