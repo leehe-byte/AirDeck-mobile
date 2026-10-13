@@ -252,13 +252,13 @@ class MainActivity : AppCompatActivity() {
             hint = "如 9090, 9091（逗号分隔）"
         }
         val defaultCheck = CheckBox(this).apply {
-            text = "默认进入 OpenGW 版本"
+            text = "默认进入 AirDeck 版本"
             isChecked = prefs.getInt("default_port", 8000) == prefs.getInt("port_opengw", 8000)
         }
 
         val btnTest = Button(this).apply {
             text = "发送测试通知"
-            setOnClickListener { sendNotification("测试成功", "OpenGW Mobile 通知功能正常。") }
+            setOnClickListener { sendNotification("测试成功", "AirDeck Mobile 通知功能正常。") }
         }
 
         val btnExit = Button(this).apply {
@@ -271,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         layout.addView(ipEdit)
         layout.addView(TextView(this).apply { text = "管理密码"; setPadding(0, 20, 0, 0); textSize = 12f })
         layout.addView(pwdEdit)
-        layout.addView(TextView(this).apply { text = "OpenGW 端口"; setPadding(0, 20, 0, 0); textSize = 12f })
+        layout.addView(TextView(this).apply { text = "AirDeck 端口"; setPadding(0, 20, 0, 0); textSize = 12f })
         layout.addView(opengwPortEdit)
         layout.addView(TextView(this).apply { text = "官方 Web 端口"; setPadding(0, 20, 0, 0); textSize = 12f })
         layout.addView(officialPortEdit)
@@ -350,13 +350,13 @@ class MainActivity : AppCompatActivity() {
         val p2 = prefs.getInt("port_official", 8080)
 
         currentPort = if (currentPort == p1) p2 else p1
-        val targetName = if (currentPort == p1) "OpenGW Web" else "官方 Web"
+        val targetName = if (currentPort == p1) "AirDeck Web" else "官方 Web"
 
         Toast.makeText(this, "正在切换到: $targetName", Toast.LENGTH_SHORT).show()
         webView.loadUrl("http://${webHost(currentPort)}:$currentPort/index.html")
     }
 
-    /** OpenGW 走本机隧道（WebSocket/远程控制需经隧道转发，暂保留）；官方端口直连设备 IP */
+    /** AirDeck 走本机隧道（WebSocket/远程控制需经隧道转发，暂保留）；官方端口直连设备 IP */
     private fun webHost(port: Int): String {
         val prefs = getSharedPreferences("config", Context.MODE_PRIVATE)
         val p1 = prefs.getInt("port_opengw", 8000)
@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 刷新/重试：重新加载当前目标（OpenGW 直连设备 IP），比 reload 更彻底地绕过错误态 */
+    /** 刷新/重试：重新加载当前目标（AirDeck 直连设备 IP），比 reload 更彻底地绕过错误态 */
     private fun reloadCurrentWeb() {
         webView.loadUrl("http://${webHost(currentPort)}:$currentPort/index.html")
     }
@@ -476,7 +476,7 @@ class MainActivity : AppCompatActivity() {
                 isAutoLoginDone = true
                 CookieManager.getInstance().apply {
                     setAcceptCookie(true)
-                    // OpenGW 走本机隧道，cookie 绑 127.0.0.1（OpenGW 自身用 token，原厂 cookie 供隧道内资源）
+                    // AirDeck 走本机隧道，cookie 绑 127.0.0.1（AirDeck 自身用 token，原厂 cookie 供隧道内资源）
                     setCookie("http://127.0.0.1:8000", cookie)
                     setCookie("http://127.0.0.1:7681", cookie)
                     if (p1 != 8000) setCookie("http://127.0.0.1:$p1", cookie)
@@ -510,7 +510,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** OpenGW Web 登录：用官方密码换取会话 token（直连设备 IP，不走隧道） */
+    /** AirDeck Web 登录：用官方密码换取会话 token（直连设备 IP，不走隧道） */
     private fun doOpenGWLogin(pwd: String): String? {
         return try {
             val prefs = getSharedPreferences("config", Context.MODE_PRIVATE)
@@ -526,7 +526,7 @@ class MainActivity : AppCompatActivity() {
             val data = JSONObject(res.body?.string() ?: "")
             if (data.optInt("result") == 0) data.optString("token").ifEmpty { null } else null
         } catch (e: Exception) {
-            Log.e("Login", "OpenGW login failed", e)
+            Log.e("Login", "AirDeck login failed", e)
             null
         }
     }

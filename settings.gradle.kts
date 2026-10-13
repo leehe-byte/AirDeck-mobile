@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenGW Mobile"
+rootProject.name = "AirDeck Mobile"
 include(":app")
