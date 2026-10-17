@@ -23,8 +23,8 @@ android {
         applicationId = "com.opengw.manager.mobile"
         minSdk = 24
         targetSdk = 33
-        versionCode = 11
-        versionName = "2.4"
+        versionCode = 12
+        versionName = "2.5"
         setProperty("archivesBaseName", "${rootProject.name}-${versionName}")
     }
 
@@ -34,23 +34,48 @@ android {
     // 这里刻意做成「坏 secret 不会让构建崩」：
     // Base64.getDecoder().decode() 抛异常发生在配置阶段，会让整个构建直接失败，
     // 而且报错信息和 secret 本身没关系，很难定位。
-    // 现在改成解码失败就退回不签名 + 打一条醒目的警告，
+    // 现在改成：依次尝试 basic / MIME / URL-safe 三种解码器，
+    // 全失败才退回不签名 + 打一条醒目的警告，
     // 构建照常完成（产物会带 -unsigned 后缀，一眼能看出来）。
     val keystoreBytes: ByteArray? = System.getenv("KEYSTORE_BASE64")
         ?.filterNot { it.isWhitespace() }
         ?.takeIf { it.isNotEmpty() }
         ?.let { raw ->
-            try {
-                Base64.getDecoder().decode(raw)
-            } catch (e: IllegalArgumentException) {
-                logger.warn(
-                    "⚠️  KEYSTORE_BASE64 不是合法的 base64（长度 ${raw.length}，" +
-                        "开头是 \"${raw.take(12)}…\"）。本次构建不会签名，" +
-                        "产物是 *-unsigned.apk。请检查 Repository secret " +
-                        "KEYSTORE_FILE 是否是 `base64 -w0 keystore.jks` 的结果。"
-                )
-                null
+            // 不同工具产出的 base64 变体不一样：
+            //   basic    A-Za-z0-9+/=          —— 标准
+            //   mime     basic + 允许折行       —— openssl base64 默认会折行
+            //   url      A-Za-z0-9-_           —— URL-safe，basic 会直接拒绝
+            val decoders = listOf<Pair<String, (String) -> ByteArray>>(
+                "basic" to { s -> Base64.getDecoder().decode(s) },
+                "mime" to { s -> Base64.getMimeDecoder().decode(s) },
+                "url-safe" to { s -> Base64.getUrlDecoder().decode(s) },
+            )
+            var picked: String? = null
+            var out: ByteArray? = null
+            for ((name, decode) in decoders) {
+                val bytes = try {
+                    decode(raw)
+                } catch (e: IllegalArgumentException) {
+                    null
+                }
+                if (bytes != null) {
+                    picked = name
+                    out = bytes
+                    break
+                }
             }
+            if (out == null) {
+                logger.warn(
+                    "⚠️  KEYSTORE_BASE64 三种 base64 解码器都失败了" +
+                        "（长度 ${raw.length}，开头 \"${raw.take(8)}\"，" +
+                        "结尾 \"${raw.takeLast(4)}\"）。本次构建不会签名，" +
+                        "产物是 *-unsigned.apk。请检查 Repository secret " +
+                        "KEYSTORE_FILE。"
+                )
+            } else {
+                logger.lifecycle("keystore 解码成功（${picked}），${out.size} 字节")
+            }
+            out
         }
 
     signingConfigs {

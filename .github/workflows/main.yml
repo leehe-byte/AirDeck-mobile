@@ -113,6 +113,24 @@ jobs:
             echo "  KEY_ALIAS        : ${#KEY_ALIAS}   值=${KEY_ALIAS:-(空)}"
             echo "  KEY_PASSWORD     : ${#KEY_PASSWORD}"
             echo
+            echo "=== keystore base64 自检 ==="
+            if [ -z "$KEYSTORE_BASE64" ]; then
+              echo "  KEYSTORE_BASE64 是空的 —— secret 没读到"
+            else
+              # 只打印头尾各 8 个字符，够判断格式，不泄露密钥本体
+              echo "  开头: ${KEYSTORE_BASE64:0:8}"
+              echo "  结尾: ${KEYSTORE_BASE64: -8}"
+              echo "  换行数: $(printf '%s' "$KEYSTORE_BASE64" | tr -cd '\n' | wc -c)"
+              # 非 base64 字符（- 和 _ 说明是 URL-safe 变体，Basic 解码器会拒绝）
+              echo "  非标准字符: $(printf '%s' "$KEYSTORE_BASE64" | tr -d 'A-Za-z0-9+/=\n\r' | head -c 40)"
+              if printf '%s' "$KEYSTORE_BASE64" | base64 -d > /tmp/ks.jks 2>/tmp/b64err; then
+                echo "  base64 -d: 成功，$(stat -c%s /tmp/ks.jks) 字节"
+                echo "  文件类型: $(file -b /tmp/ks.jks)"
+              else
+                echo "  base64 -d: 失败 -> $(cat /tmp/b64err)"
+              fi
+            fi
+            echo
             echo "构建产物:"
             ls -l app/build/outputs/apk/release/ 2>/dev/null || echo "  (目录不存在)"
           } > final_artifacts/signing-diagnostics.txt

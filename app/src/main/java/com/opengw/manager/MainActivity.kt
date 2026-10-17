@@ -6,7 +6,9 @@ import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -51,6 +53,23 @@ class MainActivity : AppCompatActivity() {
     private var notificationId = 0
     private var isAutoLoginDone = false
     private var openGwToken: String? = null
+
+    /**
+     * WebView 里的 `<input type="file">` 只有在 WebChromeClient 实现了
+     * onShowFileChooser 时才会弹出系统选择器。原来这里没有实现，
+     * 所以点「图片」背景 / 插件安装的选文件按钮**完全没有反应**。
+     */
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // 必须给 WebView 一个回应（取消时传 null），否则这个 input 之后再也点不动
+        pendingFileCallback?.onReceiveValue(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        )
+        pendingFileCallback = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -372,6 +391,35 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("http://${webHost(currentPort)}:$currentPort/index.html")
     }
 
+    /**
+     * 构造文件选择 Intent。
+     *
+     * 优先用 WebView 给的 `createIntent()` —— 它会带上 `<input accept>` 的类型
+     * （背景图是图片 MIME，插件包是 `.owpkg`）和 multiple 属性。
+     * 拿不到或异常时退回一个通用的「打开文件」。
+     *
+     * 注意：这段注释里不要写「图片 MIME 的通配写法」（斜杠加星号）——
+     * Kotlin 支持嵌套块注释，那个组合会再开一层注释，
+     * 把后面的代码一起吞掉，报错会指到毫不相干的行上。
+     */
+    private fun buildFileChooserIntent(params: WebChromeClient.FileChooserParams?): Intent {
+        val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        val intent = try {
+            params?.createIntent() ?: fallback
+        } catch (e: Exception) {
+            Log.w("FileChooser", "createIntent 失败，退回通用选择器", e)
+            fallback
+        }
+        // 加了 OPENABLE 才会过滤掉「只能看不能读」的条目
+        if (!intent.hasCategory(Intent.CATEGORY_OPENABLE)) {
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        return intent
+    }
+
     private fun startAppFlow() {
         initWebView()
         performAutoLogin()
@@ -383,6 +431,9 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
+            // 选完图要把 content:// URI 交给 WebView 读，这两项得开着
+            allowContentAccess = true
+            allowFileAccess = false        // 不需要 file:// 访问，保持关闭更安全
             userAgentString = "$userAgentString OpenWrtLiteManager/1.0"
         }
 
@@ -432,6 +483,40 @@ class MainActivity : AppCompatActivity() {
                     Log.d("WebConsole", "[${it.messageLevel()}] ${it.message()}")
                 }
                 return true
+            }
+
+            /**
+             * 页面里的 `<input type="file">` 被点击时会走到这里。
+             * 不实现它 = 点了没反应（背景切「图片」、插件安装选文件都受影响）。
+             *
+             * 返回 true 表示「我来处理」，之后必须在回调里给 WebView 一个结果，
+             * 否则那个 input 会一直处于「等待中」，后续点击也不会有反应。
+             */
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                // 上一次还没结束就又点了一次：先把上一次取消掉，避免回调泄漏
+                pendingFileCallback?.onReceiveValue(null)
+                pendingFileCallback = filePathCallback
+
+                // 留一条日志：万一还是弹不出来，先看这里有没有被调用
+                // （没有 = WebChromeClient 没生效；有 = 问题在 Intent / 系统选择器）
+                Log.d("FileChooser", "onShowFileChooser: accept=" +
+                        (fileChooserParams?.acceptTypes?.joinToString("|") ?: "?") +
+                        " multiple=" + (fileChooserParams?.mode ?: -1))
+
+                val intent = buildFileChooserIntent(fileChooserParams)
+                return try {
+                    fileChooserLauncher.launch(intent)
+                    true
+                } catch (e: Exception) {
+                    Log.e("FileChooser", "无法打开文件选择器", e)
+                    pendingFileCallback = null
+                    filePathCallback?.onReceiveValue(null)
+                    false
+                }
             }
         }
 
